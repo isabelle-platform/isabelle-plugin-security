@@ -3,6 +3,29 @@ use isabelle_dm::data_model::item::Item;
 use isabelle_plugin_api::api::PluginApi;
 use log::info;
 
+
+fn collection_read_hook(
+    api: &PluginApi,
+    collection: &str,
+    itm: &mut Item) -> bool {
+    if collection == "user" {
+        if !itm.strs.contains_key("salt") {
+            let salt = (api.auth_get_new_salt)();
+            itm.set_str("salt", &salt);
+            info!("There is no salt for user {}, created new", itm.id);
+            if itm.strs.contains_key("password") {
+                let pw_old = itm.safe_str("password", "");
+                let hash = (api.auth_get_password_hash)(&pw_old, &salt);
+                itm.set_str("password", &hash);
+                info!("Rehashed password for user {}", itm.id);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+
 fn item_list_filter_hook(
     api: &PluginApi,
     user: &Option<Item>,
@@ -106,5 +129,6 @@ fn item_list_filter_hook(
 pub extern fn register(api: &PluginApi) {
     info!("Registering security");
     (api.route_register_item_list_filter_hook)("security_itm_filter_hook", item_list_filter_hook);
+    (api.route_register_collection_read_hook)("security_collection_read_hook", collection_read_hook);
   // ...
 }
