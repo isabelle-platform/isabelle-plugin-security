@@ -3,8 +3,23 @@ use isabelle_dm::data_model::item::Item;
 use isabelle_plugin_api::api::PluginApi;
 use log::info;
 
+fn secplugin_otp_send_email(api: &PluginApi, itm: &Item) {
+    let email = itm.safe_str("email", "");
+    let otp = itm.safe_str("otp", "");
+    if email == "" || otp == "" {
+        return;
+    }
 
-fn collection_read_hook(
+    (api.fn_send_email)(
+        &email,
+        "Your login code",
+        &format!("Enter this as password: {}", otp),
+    );
+}
+
+
+
+fn secplugin_collection_read_hook(
     api: &PluginApi,
     collection: &str,
     itm: &mut Item) -> bool {
@@ -26,7 +41,7 @@ fn collection_read_hook(
 }
 
 
-fn item_list_filter_hook(
+fn secplugin_item_list_filter_hook(
     api: &PluginApi,
     user: &Option<Item>,
     collection: &str,
@@ -128,7 +143,7 @@ fn item_list_filter_hook(
 #[no_mangle]
 pub extern fn register(api: &PluginApi) {
     info!("Registering security");
-    (api.route_register_item_list_filter_hook)("security_itm_filter_hook", item_list_filter_hook);
-    (api.route_register_collection_read_hook)("security_collection_read_hook", collection_read_hook);
-  // ...
+    (api.route_register_item_list_filter_hook)("security_itm_filter_hook", secplugin_item_list_filter_hook);
+    (api.route_register_collection_read_hook)("security_collection_read_hook", secplugin_collection_read_hook);
+    (api.route_register_call_otp_hook)("security_otp_send_email", secplugin_otp_send_email);
 }
