@@ -1,9 +1,9 @@
-use isabelle_dm::data_model::process_result::ProcessResult;
-use std::collections::HashMap;
 use isabelle_dm::data_model::item::Item;
+use isabelle_dm::data_model::process_result::ProcessResult;
 use isabelle_plugin_api::api::PluginApi;
-use log::info;
 use log::error;
+use log::info;
+use std::collections::HashMap;
 
 fn secplugin_password_challenge_pre_edit_hook(
     api: &PluginApi,
@@ -151,7 +151,6 @@ fn secplugin_check_unique_login_email(
     };
 }
 
-
 fn secplugin_otp_send_email(api: &PluginApi, itm: &Item) {
     let email = itm.safe_str("email", "");
     let otp = itm.safe_str("otp", "");
@@ -166,12 +165,7 @@ fn secplugin_otp_send_email(api: &PluginApi, itm: &Item) {
     );
 }
 
-
-
-fn secplugin_collection_read_hook(
-    api: &PluginApi,
-    collection: &str,
-    itm: &mut Item) -> bool {
+fn secplugin_collection_read_hook(api: &PluginApi, collection: &str, itm: &mut Item) -> bool {
     if collection == "user" {
         if !itm.strs.contains_key("salt") {
             let salt = (api.auth_get_new_salt)();
@@ -189,13 +183,13 @@ fn secplugin_collection_read_hook(
     return false;
 }
 
-
 fn secplugin_item_list_filter_hook(
     api: &PluginApi,
     user: &Option<Item>,
     collection: &str,
     context: &str,
-    map: &mut HashMap<u64, Item>) {
+    map: &mut HashMap<u64, Item>,
+) {
     let mut list = true;
     let is_admin = (api.auth_check_role)(&user, "admin");
 
@@ -290,11 +284,23 @@ fn secplugin_item_list_filter_hook(
 }
 
 #[no_mangle]
-pub extern fn register(api: &PluginApi) {
+pub extern "C" fn register(api: &PluginApi) {
     info!("Registering security");
-    (api.route_register_item_list_filter_hook)("security_itm_filter_hook", secplugin_item_list_filter_hook);
-    (api.route_register_collection_read_hook)("security_collection_read_hook", secplugin_collection_read_hook);
+    (api.route_register_item_list_filter_hook)(
+        "security_itm_filter_hook",
+        secplugin_item_list_filter_hook,
+    );
+    (api.route_register_collection_read_hook)(
+        "security_collection_read_hook",
+        secplugin_collection_read_hook,
+    );
     (api.route_register_call_otp_hook)("security_otp_send_email", secplugin_otp_send_email);
-    (api.route_register_item_pre_edit_hook)("security_check_unique_login_email", secplugin_check_unique_login_email);
-    (api.route_register_item_pre_edit_hook)("security_password_challenge_pre_edit_hook", secplugin_password_challenge_pre_edit_hook);
+    (api.route_register_item_pre_edit_hook)(
+        "security_check_unique_login_email",
+        secplugin_check_unique_login_email,
+    );
+    (api.route_register_item_pre_edit_hook)(
+        "security_password_challenge_pre_edit_hook",
+        secplugin_password_challenge_pre_edit_hook,
+    );
 }
