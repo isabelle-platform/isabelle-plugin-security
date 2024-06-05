@@ -180,6 +180,11 @@ impl SecurityPlugin {
     }
 }
 impl Plugin for SecurityPlugin {
+
+    fn ping_test(&mut self) {
+
+    }
+
     fn item_pre_edit_hook(
         &mut self,
         api: &Box<dyn PluginApi>,
@@ -373,7 +378,7 @@ impl Plugin for SecurityPlugin {
         return WebResponse::NotImplemented;
     }
 
-    fn route_collection_read_hook(
+    fn collection_read_hook(
         &mut self,
         api: &Box<dyn PluginApi>,
         hndl: &str,
@@ -400,7 +405,7 @@ impl Plugin for SecurityPlugin {
         return false;
     }
 
-    fn route_call_otp_hook(&mut self, api: &Box<dyn PluginApi>, hndl: &str, itm: &Item) {
+    fn call_otp_hook(&mut self, api: &Box<dyn PluginApi>, hndl: &str, itm: &Item) {
         if hndl != "security_otp_send_email" {
             return;
         }
