@@ -183,6 +183,7 @@ impl Plugin for SecurityPlugin {
     fn item_pre_edit_hook(
         &mut self,
         api: Box<&dyn PluginApi>,
+        hndl: &str,
         user: &Option<Item>,
         collection: &str,
         old_itm: Option<Item>,
@@ -190,28 +191,39 @@ impl Plugin for SecurityPlugin {
         del: bool,
         _merge: bool,
     ) -> ProcessResult {
-        let r1 = self.challenge_pre_edit_hook(
-            api.clone(),
-            user,
-            collection,
-            old_itm.clone(),
-            itm,
-            del,
-            _merge,
-        );
-        if !r1.succeeded {
-            return r1;
+        if hndl == "security_password_challenge_pre_edit_hook" {
+            return self.challenge_pre_edit_hook(
+                api.clone(),
+                user,
+                collection,
+                old_itm.clone(),
+                itm,
+                del,
+                _merge,
+            );
         }
 
-        let r2 = self.check_unique_login_email(api, user, collection, old_itm, itm, del, _merge);
-        return r2;
+        if hndl == "security_check_unique_login_email" {
+            return self.check_unique_login_email(api, user,
+                collection,
+                old_itm,
+                itm,
+                del,
+                _merge);
+        }
+
+        return ProcessResult {
+            succeeded: false,
+            error: "not implemented".to_string(),
+        };
     }
 
-    fn item_post_edit_hook(&mut self, _api: Box<&dyn PluginApi>, _: &str, _: u64, _: bool) {}
+    fn item_post_edit_hook(&mut self, _api: Box<&dyn PluginApi>, _hndl: &str, _: &str, _: u64, _: bool) {}
 
     fn item_auth_hook(
         &mut self,
         _api: Box<&dyn PluginApi>,
+        _hndl: &str,
         _: &Option<Item>,
         _: &str,
         _: u64,
@@ -224,11 +236,16 @@ impl Plugin for SecurityPlugin {
     fn item_list_filter_hook(
         &mut self,
         api: Box<&dyn PluginApi>,
+        hndl: &str,
         user: &Option<Item>,
         collection: &str,
         context: &str,
         map: &mut HashMap<u64, Item>,
     ) {
+        if hndl != "security_itm_filter_hook" {
+            return;
+        }
+
         let mut list = true;
         let is_admin = api.auth_check_role(&user, "admin");
 
@@ -325,37 +342,44 @@ impl Plugin for SecurityPlugin {
     fn route_url_hook(
         &mut self,
         _api: Box<&dyn PluginApi>,
+        _hndl: &str,
         _: &Option<Item>,
         _: &str,
     ) -> WebResponse {
-        return WebResponse::Ok;
+        return WebResponse::NotImplemented;
     }
 
     fn route_unprotected_url_hook(
         &mut self,
         _api: Box<&dyn PluginApi>,
+        _hndl: &str,
         _: &Option<Item>,
         _: &str,
     ) -> WebResponse {
-        return WebResponse::Ok;
+        return WebResponse::NotImplemented;
     }
 
     fn route_unprotected_url_post_hook(
         &mut self,
         _api: Box<&dyn PluginApi>,
+        _hndl: &str,
         _: &Option<Item>,
         _: &str,
         _: &Item,
     ) -> WebResponse {
-        return WebResponse::Ok;
+        return WebResponse::NotImplemented;
     }
 
     fn route_collection_read_hook(
         &mut self,
         api: Box<&dyn PluginApi>,
+        hndl: &str,
         collection: &str,
         itm: &mut Item,
     ) -> bool {
+        if hndl != "security_collection_read_hook" {
+            return false;
+        }
         if collection == "user" {
             if !itm.strs.contains_key("salt") {
                 let salt = api.auth_get_new_salt();
@@ -373,7 +397,11 @@ impl Plugin for SecurityPlugin {
         return false;
     }
 
-    fn route_call_otp_hook(&mut self, api: Box<&dyn PluginApi>, itm: &Item) {
+    fn route_call_otp_hook(&mut self, api: Box<&dyn PluginApi>, hndl: &str, itm: &Item) {
+        if hndl != "security_otp_send_email" {
+            return;
+        }
+
         let email = itm.safe_str("email", "");
         let otp = itm.safe_str("otp", "");
         if email == "" || otp == "" {
