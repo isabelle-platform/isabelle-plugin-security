@@ -28,8 +28,7 @@ use log::error;
 use log::info;
 use std::collections::HashMap;
 
-struct SecurityPlugin {
-}
+struct SecurityPlugin {}
 
 impl SecurityPlugin {
     fn check_unique_login_email(
@@ -191,7 +190,15 @@ impl Plugin for SecurityPlugin {
         del: bool,
         _merge: bool,
     ) -> ProcessResult {
-        let r1 = self.challenge_pre_edit_hook(api.clone(), user, collection, old_itm.clone(), itm, del, _merge);
+        let r1 = self.challenge_pre_edit_hook(
+            api.clone(),
+            user,
+            collection,
+            old_itm.clone(),
+            itm,
+            del,
+            _merge,
+        );
         if !r1.succeeded {
             return r1;
         }
@@ -200,18 +207,28 @@ impl Plugin for SecurityPlugin {
         return r2;
     }
 
-    fn item_post_edit_hook(&mut self, _api: Box<&dyn PluginApi>, _: &str, _: u64, _: bool) {
-    }
+    fn item_post_edit_hook(&mut self, _api: Box<&dyn PluginApi>, _: &str, _: u64, _: bool) {}
 
-    fn item_auth_hook(&mut self, _api: Box<&dyn PluginApi>, _: &Option<Item>, _: &str, _: u64, _: Option<Item>, _: bool) -> bool {
+    fn item_auth_hook(
+        &mut self,
+        _api: Box<&dyn PluginApi>,
+        _: &Option<Item>,
+        _: &str,
+        _: u64,
+        _: Option<Item>,
+        _: bool,
+    ) -> bool {
         return true;
     }
 
-    fn item_list_filter_hook(&mut self, api: Box<&dyn PluginApi>,
+    fn item_list_filter_hook(
+        &mut self,
+        api: Box<&dyn PluginApi>,
         user: &Option<Item>,
         collection: &str,
         context: &str,
-        map: &mut HashMap<u64, Item>) {
+        map: &mut HashMap<u64, Item>,
+    ) {
         let mut list = true;
         let is_admin = api.auth_check_role(&user, "admin");
 
@@ -305,19 +322,40 @@ impl Plugin for SecurityPlugin {
         *map = short_map;
     }
 
-    fn route_url_hook(&mut self, _api: Box<&dyn PluginApi>, _: &Option<Item>, _: &str) -> WebResponse {
+    fn route_url_hook(
+        &mut self,
+        _api: Box<&dyn PluginApi>,
+        _: &Option<Item>,
+        _: &str,
+    ) -> WebResponse {
         return WebResponse::Ok;
     }
 
-    fn route_unprotected_url_hook(&mut self, _api: Box<&dyn PluginApi>, _: &Option<Item>, _: &str) -> WebResponse {
+    fn route_unprotected_url_hook(
+        &mut self,
+        _api: Box<&dyn PluginApi>,
+        _: &Option<Item>,
+        _: &str,
+    ) -> WebResponse {
         return WebResponse::Ok;
     }
 
-    fn route_unprotected_url_post_hook(&mut self, _api: Box<&dyn PluginApi>, _: &Option<Item>, _: &str, _: &Item) -> WebResponse {
+    fn route_unprotected_url_post_hook(
+        &mut self,
+        _api: Box<&dyn PluginApi>,
+        _: &Option<Item>,
+        _: &str,
+        _: &Item,
+    ) -> WebResponse {
         return WebResponse::Ok;
     }
 
-    fn route_collection_read_hook(&mut self, api: Box<&dyn PluginApi>, collection: &str, itm: &mut Item) -> bool {
+    fn route_collection_read_hook(
+        &mut self,
+        api: Box<&dyn PluginApi>,
+        collection: &str,
+        itm: &mut Item,
+    ) -> bool {
         if collection == "user" {
             if !itm.strs.contains_key("salt") {
                 let salt = api.auth_get_new_salt();
