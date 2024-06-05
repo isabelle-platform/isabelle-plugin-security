@@ -180,10 +180,7 @@ impl SecurityPlugin {
     }
 }
 impl Plugin for SecurityPlugin {
-
-    fn ping_test(&mut self) {
-
-    }
+    fn ping_test(&mut self) {}
 
     fn item_pre_edit_hook(
         &mut self,
