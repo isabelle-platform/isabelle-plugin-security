@@ -33,7 +33,7 @@ struct SecurityPlugin {}
 impl SecurityPlugin {
     fn check_unique_login_email(
         &mut self,
-        api: Box<&dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         _user: &Option<Item>,
         _collection: &str,
         _old_itm: Option<Item>,
@@ -93,7 +93,7 @@ impl SecurityPlugin {
 
     fn challenge_pre_edit_hook(
         &mut self,
-        api: Box<&dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         user: &Option<Item>,
         collection: &str,
         old_itm: Option<Item>,
@@ -182,7 +182,7 @@ impl SecurityPlugin {
 impl Plugin for SecurityPlugin {
     fn item_pre_edit_hook(
         &mut self,
-        api: Box<&dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         hndl: &str,
         user: &Option<Item>,
         collection: &str,
@@ -193,7 +193,7 @@ impl Plugin for SecurityPlugin {
     ) -> ProcessResult {
         if hndl == "security_password_challenge_pre_edit_hook" {
             return self.challenge_pre_edit_hook(
-                api.clone(),
+                api,
                 user,
                 collection,
                 old_itm.clone(),
@@ -218,11 +218,11 @@ impl Plugin for SecurityPlugin {
         };
     }
 
-    fn item_post_edit_hook(&mut self, _api: Box<&dyn PluginApi>, _hndl: &str, _: &str, _: u64, _: bool) {}
+    fn item_post_edit_hook(&mut self, _api: &Box<dyn PluginApi>, _hndl: &str, _: &str, _: u64, _: bool) {}
 
     fn item_auth_hook(
         &mut self,
-        _api: Box<&dyn PluginApi>,
+        _api: &Box<dyn PluginApi>,
         _hndl: &str,
         _: &Option<Item>,
         _: &str,
@@ -235,7 +235,7 @@ impl Plugin for SecurityPlugin {
 
     fn item_list_filter_hook(
         &mut self,
-        api: Box<&dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         hndl: &str,
         user: &Option<Item>,
         collection: &str,
@@ -341,7 +341,7 @@ impl Plugin for SecurityPlugin {
 
     fn route_url_hook(
         &mut self,
-        _api: Box<&dyn PluginApi>,
+        _api: &Box<dyn PluginApi>,
         _hndl: &str,
         _: &Option<Item>,
         _: &str,
@@ -351,7 +351,7 @@ impl Plugin for SecurityPlugin {
 
     fn route_unprotected_url_hook(
         &mut self,
-        _api: Box<&dyn PluginApi>,
+        _api: &Box<dyn PluginApi>,
         _hndl: &str,
         _: &Option<Item>,
         _: &str,
@@ -361,7 +361,7 @@ impl Plugin for SecurityPlugin {
 
     fn route_unprotected_url_post_hook(
         &mut self,
-        _api: Box<&dyn PluginApi>,
+        _api: &Box<dyn PluginApi>,
         _hndl: &str,
         _: &Option<Item>,
         _: &str,
@@ -372,7 +372,7 @@ impl Plugin for SecurityPlugin {
 
     fn route_collection_read_hook(
         &mut self,
-        api: Box<&dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         hndl: &str,
         collection: &str,
         itm: &mut Item,
@@ -397,7 +397,7 @@ impl Plugin for SecurityPlugin {
         return false;
     }
 
-    fn route_call_otp_hook(&mut self, api: Box<&dyn PluginApi>, hndl: &str, itm: &Item) {
+    fn route_call_otp_hook(&mut self, api: &Box<dyn PluginApi>, hndl: &str, itm: &Item) {
         if hndl != "security_otp_send_email" {
             return;
         }
