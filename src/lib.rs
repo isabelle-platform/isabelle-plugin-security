@@ -204,12 +204,7 @@ impl Plugin for SecurityPlugin {
         }
 
         if hndl == "security_check_unique_login_email" {
-            return self.check_unique_login_email(api, user,
-                collection,
-                old_itm,
-                itm,
-                del,
-                _merge);
+            return self.check_unique_login_email(api, user, collection, old_itm, itm, del, _merge);
         }
 
         return ProcessResult {
@@ -218,7 +213,15 @@ impl Plugin for SecurityPlugin {
         };
     }
 
-    fn item_post_edit_hook(&mut self, _api: &Box<dyn PluginApi>, _hndl: &str, _: &str, _: u64, _: bool) {}
+    fn item_post_edit_hook(
+        &mut self,
+        _api: &Box<dyn PluginApi>,
+        _hndl: &str,
+        _: &str,
+        _: u64,
+        _: bool,
+    ) {
+    }
 
     fn item_auth_hook(
         &mut self,
