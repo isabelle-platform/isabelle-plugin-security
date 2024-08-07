@@ -7,6 +7,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm" }
-isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api" }
+isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm", version = "1.0.1" }
+isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", version = "1.0.10" }
 log = "0.4.0"
