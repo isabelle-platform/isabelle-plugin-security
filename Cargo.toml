@@ -8,5 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm", tag = "1.1.0" }
-isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.1.0" }
+isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.2.0" }
 log = "0.4.0"
