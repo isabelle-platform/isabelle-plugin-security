@@ -21,6 +21,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+use isabelle_dm::data_model::data_object_action::DataObjectAction;
 use isabelle_dm::data_model::item::Item;
 use isabelle_dm::data_model::process_result::ProcessResult;
 use isabelle_plugin_api::api::*;
@@ -38,7 +39,7 @@ impl SecurityPlugin {
         _collection: &str,
         _old_itm: Option<Item>,
         itm: &mut Item,
-        del: bool,
+        action: DataObjectAction,
         merge: bool,
     ) -> ProcessResult {
         let mut itm_upd = if _old_itm != None {
@@ -51,7 +52,7 @@ impl SecurityPlugin {
         } else {
             itm_upd = itm.clone();
         }
-        if del {
+        if action == DataObjectAction::Delete {
             return ProcessResult {
                 succeeded: true,
                 error: "".to_string(),
@@ -98,13 +99,13 @@ impl SecurityPlugin {
         collection: &str,
         old_itm: Option<Item>,
         itm: &mut Item,
-        del: bool,
+        action: DataObjectAction,
         _merge: bool,
     ) -> ProcessResult {
         let mut salt: String = "<empty salt>".to_string();
         let is_admin = api.auth_check_role(&user, "admin");
 
-        if del {
+        if action == DataObjectAction::Delete {
             return ProcessResult {
                 succeeded: true,
                 error: "".to_string(),
@@ -190,7 +191,7 @@ impl Plugin for SecurityPlugin {
         collection: &str,
         old_itm: Option<Item>,
         itm: &mut Item,
-        del: bool,
+        action: DataObjectAction,
         _merge: bool,
     ) -> ProcessResult {
         if hndl == "security_password_challenge_pre_edit_hook" {
@@ -200,13 +201,13 @@ impl Plugin for SecurityPlugin {
                 collection,
                 old_itm.clone(),
                 itm,
-                del,
+                action,
                 _merge,
             );
         }
 
         if hndl == "security_check_unique_login_email" {
-            return self.check_unique_login_email(api, user, collection, old_itm, itm, del, _merge);
+            return self.check_unique_login_email(api, user, collection, old_itm, itm, action, _merge);
         }
 
         return ProcessResult {
@@ -220,8 +221,9 @@ impl Plugin for SecurityPlugin {
         _api: &Box<dyn PluginApi>,
         _hndl: &str,
         _: &str,
+        _: Option<Item>,
         _: u64,
-        _: bool,
+        _: DataObjectAction,
     ) {
     }
 
