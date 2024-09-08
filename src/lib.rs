@@ -207,7 +207,8 @@ impl Plugin for SecurityPlugin {
         }
 
         if hndl == "security_check_unique_login_email" {
-            return self.check_unique_login_email(api, user, collection, old_itm, itm, action, _merge);
+            return self
+                .check_unique_login_email(api, user, collection, old_itm, itm, action, _merge);
         }
 
         return ProcessResult {
