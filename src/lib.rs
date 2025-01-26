@@ -278,8 +278,10 @@ impl Plugin for SecurityPlugin {
         );
         if list {
             for el in &mut *map {
-                if *el.0 == user.as_ref().unwrap().id || is_admin ||
-                   el.1.safe_bool("__security_preserve", false) {
+                if *el.0 == user.as_ref().unwrap().id
+                    || is_admin
+                    || el.1.safe_bool("__security_preserve", false)
+                {
                     let mut itm = Item::new();
                     itm.id = *el.0;
                     itm.strs
@@ -303,9 +305,10 @@ impl Plugin for SecurityPlugin {
             }
         } else {
             for el in &mut *map {
-                if *el.0 != user.as_ref().unwrap().id &&
-                   !is_admin &&
-                   !el.1.safe_bool("__security_preserve", false) {
+                if *el.0 != user.as_ref().unwrap().id
+                    && !is_admin
+                    && !el.1.safe_bool("__security_preserve", false)
+                {
                     /* nothing */
                 } else {
                     let mut itm = el.1.clone();
