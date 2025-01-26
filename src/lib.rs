@@ -150,7 +150,7 @@ impl SecurityPlugin {
                 };
             }
             let res = is_admin
-                || api.auth_verify_password(&old_checked_pw, &old_pw_hash)
+                || (old_pw_hash != "" && api.auth_verify_password(&old_checked_pw, &old_pw_hash))
                 || (old_otp != "" && old_otp == old_checked_pw);
             if !res
                 || itm.safe_str("__new_password1", "<bad1>")
