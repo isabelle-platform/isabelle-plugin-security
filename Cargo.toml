@@ -1,6 +1,6 @@
 [package]
 name = "isabelle-plugin-security"
-version = "1.9.1"
+version = "1.9.2"
 edition = "2021"
 
 [lib]
@@ -8,5 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm", tag = "1.4.1" }
-isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.11.0" }
+isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.12.1" }
 log = "0.4.0"
