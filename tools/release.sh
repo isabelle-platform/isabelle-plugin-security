@@ -32,10 +32,12 @@ if [ "$output" == "" ] ; then
 fi
 
 build_folder="$(cd ${build_folder} && pwd)"
-target_folder="$TOP_DIR/target/release"
+target_folder="$TOP_DIR/target/x86_64-unknown-linux-gnu/release"
 output="$(lib_core_normalize_filepath ${output})"
 
 cd "${target_folder}"
 echo $(get_hash) > hash
-tar cJvf out.tar.xz lib*.dylib lib*.so hash
+dylib_files="$(find lib*.dylib | xargs)"
+so_files="$(find lib*.so | xargs)"
+tar cJvf out.tar.xz ${dylib_files} ${so_files} hash
 cp out.tar.xz "${output}"

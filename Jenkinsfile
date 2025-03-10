@@ -1,15 +1,19 @@
 pipeline {
+  /* Use docker image from tools/build-env folder */
   agent {
     dockerfile {
-      filename 'Dockerfile_ubuntu_2304'
+      filename 'Dockerfile_ubuntu_2404'
       dir 'tools/build-env'
+      args '--mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock -u 0:0'
     }
   }
 
   environment {
+    /* Collect versions saved in tools/ folder */
     FULL_VERSION = sh(script: "./tools/get_version.sh full", returnStdout: true).trim()
     SHORT_VERSION = sh(script: "./tools/get_version.sh", returnStdout: true).trim()
     BRANCH_FOLDER = sh(script: "./tools/get_branch_folder.sh ${BRANCH_NAME}", returnStdout: true).trim()
+    RUST_STATIC_FLAGS = '-C target-feature=-crt-static'
   }
 
   stages {
@@ -25,10 +29,20 @@ pipeline {
       stages {
         stage("Fixes/formatting") {
           steps {
-            sh 'env PATH=${HOME}/.cargo/bin:${PATH} cargo fix && git diff --exit-code'
-            sh 'env PATH=${HOME}/.cargo/bin:${PATH} cargo fmt && git diff --exit-code'
+            /* Mark directory as safe - we might have dubious permissions here due to uid manipulations */
+            sh 'git config --global --add safe.directory "*"'
+
+            /* Fail if 'cargo fix' changes anything */
+            sh 'cargo fix && git diff --exit-code'
+
+            /* Fail if 'cargo fmt' changes anything */
+            sh 'cargo fmt && git diff --exit-code'
+
+            /* Fail if Cargo.toml is not updated with current version */
+            sh 'cat Cargo.toml | grep ${SHORT_VERSION}'
           }
         }
+
         stage("Check version in Git tags") {
           when {
             expression {
@@ -36,12 +50,8 @@ pipeline {
             }
           }
           steps {
+            /* Fail if tag is not updated with current version */
             sh 'git tag | grep ${SHORT_VERSION}'
-          }
-        }
-        stage("Check version in Cargo") {
-          steps {
-            sh 'cat Cargo.toml | grep ${SHORT_VERSION}'
           }
         }
       }
@@ -50,7 +60,9 @@ pipeline {
       parallel {
         stage('Build (Linux)') {
           steps {
-            sh 'env PATH=${HOME}/.cargo/bin:${PATH} cargo build --release --lib'
+            sh 'which cargo'
+            sh 'env RUSTFLAGS="${RUST_STATIC_FLAGS}" CROSS_CONTAINER_UID=0 CROSS_CONTAINER_GID=0 CROSS_CONTAINER_IN_CONTAINER=true CROSS_NO_WARNINGS=0 cross build --target=x86_64-unknown-linux-gnu --release'
+            sh 'chmod -R 777 target'
           }
         }
       }
@@ -58,6 +70,7 @@ pipeline {
 
     stage('Prepare bundle') {
       stages {
+        /* Right now, we build just for Linux, that's the preferred platform */
         stage('Prepare artifacts (branch)') {
           steps {
             sh 'mkdir -p build && (rm -rf build/* || true)'
@@ -188,11 +201,16 @@ pipeline {
     }
   }
   post {
+    /* Send notification to Telegram */
     success {
       sh './ttg/ttg_send_notification --env --ignore-bad -- "${JOB_NAME}/${BUILD_NUMBER}: PASSED"'
     }
     failure {
       sh './ttg/ttg_send_notification --env --ignore-bad -- "${JOB_NAME}/${BUILD_NUMBER}: FAILED. See details in ${BUILD_URL}"'
+    }
+    always {
+      sh 'chmod -R 777 target'
+      sh 'chmod -R 777 build'
     }
   }
 }
