@@ -56,6 +56,7 @@ impl SecurityPlugin {
             return ProcessResult {
                 succeeded: true,
                 error: "".to_string(),
+                data: HashMap::new(),
             };
         }
         let email = itm_upd.safe_str("email", "").to_lowercase();
@@ -65,6 +66,7 @@ impl SecurityPlugin {
             return ProcessResult {
                 succeeded: false,
                 error: "E-Mail must not be empty".to_string(),
+                data: HashMap::new(),
             };
         }
 
@@ -75,12 +77,14 @@ impl SecurityPlugin {
                     return ProcessResult {
                         succeeded: false,
                         error: "Login mustn't match already existing one".to_string(),
+                        data: HashMap::new(),
                     };
                 }
                 if email == usr.1.safe_str("email", "").to_lowercase() {
                     return ProcessResult {
                         succeeded: false,
                         error: "E-Mail mustn't match already existing one".to_string(),
+                        data: HashMap::new(),
                     };
                 }
             }
@@ -89,6 +93,7 @@ impl SecurityPlugin {
         return ProcessResult {
             succeeded: true,
             error: "".to_string(),
+            data: HashMap::new(),
         };
     }
 
@@ -109,6 +114,7 @@ impl SecurityPlugin {
             return ProcessResult {
                 succeeded: true,
                 error: "".to_string(),
+                data: HashMap::new(),
             };
         }
 
@@ -120,6 +126,7 @@ impl SecurityPlugin {
             return ProcessResult {
                 succeeded: false,
                 error: "Can't edit password directly".to_string(),
+                data: HashMap::new(),
             };
         }
 
@@ -147,6 +154,7 @@ impl SecurityPlugin {
                 return ProcessResult {
                     succeeded: false,
                     error: "Old password is empty".to_string(),
+                    data: HashMap::new(),
                 };
             }
             let res = is_admin
@@ -160,6 +168,7 @@ impl SecurityPlugin {
                 return ProcessResult {
                     succeeded: false,
                     error: "Password change challenge failed".to_string(),
+                    data: HashMap::new(),
                 };
             }
             let new_pw = itm.safe_str("__new_password1", "");
@@ -177,6 +186,7 @@ impl SecurityPlugin {
         return ProcessResult {
             succeeded: true,
             error: "".to_string(),
+            data: HashMap::new(),
         };
     }
 }
@@ -214,6 +224,7 @@ impl Plugin for SecurityPlugin {
         return ProcessResult {
             succeeded: false,
             error: "not implemented".to_string(),
+            data: HashMap::new(),
         };
     }
 
