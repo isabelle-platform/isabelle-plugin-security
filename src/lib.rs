@@ -21,6 +21,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+use image;
+use image::ImageEncoder;
 use isabelle_dm::data_model::data_object_action::DataObjectAction;
 use isabelle_dm::data_model::item::Item;
 use isabelle_dm::data_model::process_result::ProcessResult;
@@ -340,7 +342,7 @@ impl Plugin for SecurityPlugin {
 
     fn route_url_hook(
         &mut self,
-        _api: &Box<dyn PluginApi>,
+        api: &Box<dyn PluginApi>,
         hndl: &str,
         user: &Option<Item>,
         query: &str,
@@ -350,6 +352,13 @@ impl Plugin for SecurityPlugin {
                 if user.is_none() {
                     return WebResponse::Forbidden;
                 }
+
+                let data_path: String = api
+                    .fn_get_state("opt_data_path")
+                    .as_ref()
+                    .and_then(|v| v.downcast_ref::<String>())
+                    .cloned()
+                    .unwrap_or_else(|| ".".to_string());
 
                 let q: HashMap<String, String> =
                     serde_urlencoded::from_str(query).unwrap_or_default();
@@ -370,7 +379,7 @@ impl Plugin for SecurityPlugin {
                     None => return WebResponse::BadRequest,
                 };
 
-                let path = format!("./user-avatars/{}.bin", uid);
+                let path = format!("{}/user-avatars/{}.bin", data_path, uid);
                 return WebResponse::OkFilePath("avatar".to_string(), path);
             }
             _ => WebResponse::NotImplemented,
@@ -408,6 +417,13 @@ impl Plugin for SecurityPlugin {
     ) -> WebResponse {
         match hndl {
             "security_upload_avatar" => {
+                let data_path: String = api
+                    .fn_get_state("opt_data_path")
+                    .as_ref()
+                    .and_then(|v| v.downcast_ref::<String>())
+                    .cloned()
+                    .unwrap_or_else(|| ".".to_string());
+
                 let q: HashMap<String, String> =
                     serde_urlencoded::from_str(query).unwrap_or_default();
 
@@ -434,16 +450,58 @@ impl Plugin for SecurityPlugin {
                 let files = post_itm.safe_strstr("multipart-files", &HashMap::new());
 
                 // ensure directory exists
-                let dir = Path::new("./user-avatars");
+                let dir_path = format!("{}/user-avatars", data_path);
+                let dir = Path::new(&dir_path);
                 if !dir.exists() {
                     let _ = fs::create_dir_all(dir);
                 }
 
-                let dst = format!("./user-avatars/{}.bin", target_id);
+                // Store avatar as PNG bytes (not raw RGBA/RGB buffer).
+                let dst = format!("{}/user-avatars/{}.bin", data_path, target_id);
 
                 for file in files {
-                    let _ = fs::copy(file.1.clone(), dst.clone()).unwrap();
-                    return WebResponse::Ok;
+                    let ext = file.1.split('.').last().unwrap_or("png");
+                    // Always stage to a predictable filename without relying on the source extension.
+                    // This avoids decoder issues and simplifies cleanup.
+                    let new_path =
+                        format!("{}/user-avatars/{}.stage.{}", data_path, target_id, ext);
+                    fs::rename(file.1.clone(), new_path.clone()).unwrap();
+
+                    /* reduce the image to 256x256 */
+                    match image::open(&new_path) {
+                        Ok(img) => {
+                            let img = img.resize(256, 256, image::imageops::FilterType::Lanczos3);
+                            let img = img.to_rgba8();
+
+                            let mut out: Vec<u8> = Vec::new();
+                            let encoder = image::codecs::png::PngEncoder::new(&mut out);
+                            if let Err(e) = encoder.write_image(
+                                &img,
+                                img.width(),
+                                img.height(),
+                                image::ColorType::Rgba8.into(),
+                            ) {
+                                println!("Failed to encode avatar PNG for {}: {}", file.1, e);
+                                let _ = fs::remove_file(new_path.clone()).unwrap();
+                                return WebResponse::BadRequest;
+                            }
+
+                            if let Err(e) = fs::write(dst.clone(), out) {
+                                println!("Failed to write avatar file {}: {}", dst, e);
+                                let _ = fs::remove_file(new_path.clone()).unwrap();
+                                return WebResponse::BadRequest;
+                            }
+
+                            let _ = fs::remove_file(new_path.clone()).unwrap();
+                            return WebResponse::Ok;
+                        }
+                        Err(e) => {
+                            // Most common reason here: the uploaded file isn't a valid image, or the temp file path is wrong.
+                            println!("Failed to open uploaded image {}: {}", file.1, e);
+                            let _ = fs::remove_file(new_path.clone()).unwrap();
+                            return WebResponse::BadRequest;
+                        }
+                    }
                 }
 
                 return WebResponse::BadRequest;
