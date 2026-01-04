@@ -28,6 +28,8 @@ use isabelle_plugin_api::api::*;
 use log::error;
 use log::info;
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 struct SecurityPlugin {}
 
@@ -339,11 +341,40 @@ impl Plugin for SecurityPlugin {
     fn route_url_hook(
         &mut self,
         _api: &Box<dyn PluginApi>,
-        _hndl: &str,
-        _: &Option<Item>,
-        _: &str,
+        hndl: &str,
+        user: &Option<Item>,
+        query: &str,
     ) -> WebResponse {
-        return WebResponse::NotImplemented;
+        match hndl {
+            "security_get_avatar" => {
+                if user.is_none() {
+                    return WebResponse::Forbidden;
+                }
+
+                let q: HashMap<String, String> =
+                    serde_urlencoded::from_str(query).unwrap_or_default();
+
+                let mut target_id: Option<u64> = None;
+                if let Some(id_str) = q.get("id") {
+                    if id_str == "me" {
+                        target_id = Some(user.as_ref().unwrap().id);
+                    } else {
+                        if let Ok(id) = id_str.parse::<u64>() {
+                            target_id = Some(id);
+                        }
+                    }
+                }
+
+                let uid = match target_id {
+                    Some(v) => v,
+                    None => return WebResponse::BadRequest,
+                };
+
+                let path = format!("./user-avatars/{}.bin", uid);
+                return WebResponse::OkFilePath("avatar".to_string(), path);
+            }
+            _ => WebResponse::NotImplemented,
+        }
     }
 
     fn route_unprotected_url_hook(
@@ -365,6 +396,60 @@ impl Plugin for SecurityPlugin {
         _: &Item,
     ) -> WebResponse {
         return WebResponse::NotImplemented;
+    }
+
+    fn route_url_post_hook(
+        &mut self,
+        api: &Box<dyn PluginApi>,
+        hndl: &str,
+        user: &Option<Item>,
+        query: &str,
+        post_itm: &Item,
+    ) -> WebResponse {
+        match hndl {
+            "security_upload_avatar" => {
+                let q: HashMap<String, String> =
+                    serde_urlencoded::from_str(query).unwrap_or_default();
+
+                let mut target_id: u64 = u64::MAX;
+                if let Some(id_str) = q.get("id") {
+                    if id_str == "me" {
+                        if user.is_none() {
+                            return WebResponse::Unauthorized;
+                        }
+                        target_id = user.as_ref().unwrap().id;
+                    } else {
+                        if let Ok(id) = id_str.parse::<u64>() {
+                            target_id = id;
+                            if target_id != user.as_ref().unwrap().id {
+                                let is_admin = api.auth_check_role(&user, "admin");
+                                if !is_admin {
+                                    return WebResponse::Unauthorized;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let files = post_itm.safe_strstr("multipart-files", &HashMap::new());
+
+                // ensure directory exists
+                let dir = Path::new("./user-avatars");
+                if !dir.exists() {
+                    let _ = fs::create_dir_all(dir);
+                }
+
+                let dst = format!("./user-avatars/{}.bin", target_id);
+
+                for file in files {
+                    let _ = fs::copy(file.1.clone(), dst.clone()).unwrap();
+                    return WebResponse::Ok;
+                }
+
+                return WebResponse::BadRequest;
+            }
+            _ => WebResponse::NotImplemented,
+        }
     }
 
     fn collection_read_hook(
