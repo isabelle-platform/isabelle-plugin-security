@@ -560,3 +560,513 @@ impl Plugin for SecurityPlugin {
 pub fn register(api: &mut dyn PluginPoolApi) {
     api.register(Box::new(SecurityPlugin {}));
 }
+
+// ---------------------------------------------------------------------------
+// Actor-mode (Phase 3) — register_actor + actor loop
+// ---------------------------------------------------------------------------
+//
+// This is the new entry point: instead of returning a `Box<dyn Plugin>` that
+// gets called synchronously, we spawn a tokio task that consumes
+// `PluginHookMessage`s from an mpsc and replies via embedded oneshots.
+//
+// Status:
+//   * ping, item_post_edit_hook, item_auth_hook, route_unprotected_*: fully
+//     ported (they were no-ops / trivial in the trait impl).
+//   * check_unique_login_email, challenge_pre_edit_hook, item_list_filter_hook,
+//     route_url_hook (get_avatar), route_url_post_hook (upload_avatar),
+//     collection_read_hook, call_otp_hook: marked TODO. The actor task replies
+//     with passthrough defaults — these hooks are non-functional in actor mode
+//     until ported, which is why core's default build keeps security on the
+//     trait path. Switch via cargo feature only when you're ready to lose
+//     these checks.
+
+use isabelle_plugin_api::actor::{
+    CollectionReadReply, CoreHandle, ListFilterReply, PluginHookMessage, PluginRegistry,
+    PreEditReply,
+};
+use isabelle_plugin_api::api::WebResponse;
+use tokio::sync::mpsc;
+
+pub fn register_actor(reg: &mut PluginRegistry, core: CoreHandle) {
+    let (tx, rx) = mpsc::channel(64);
+    actix_rt::spawn(run_actor(rx, core));
+    reg.add("security", tx);
+}
+
+async fn run_actor(mut rx: mpsc::Receiver<PluginHookMessage>, core: CoreHandle) {
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            PluginHookMessage::Ping { reply } => {
+                let _ = reply.send(());
+            }
+
+            PluginHookMessage::ItemPreEdit {
+                hndl,
+                user,
+                collection,
+                old_item,
+                item,
+                action,
+                merge,
+                reply,
+            } => {
+                let r = match hndl.as_str() {
+                    "security_password_challenge_pre_edit_hook" => {
+                        challenge_pre_edit_hook_async(
+                            &core,
+                            &user,
+                            &collection,
+                            old_item,
+                            item,
+                            action,
+                            merge,
+                        )
+                        .await
+                    }
+                    "security_check_unique_login_email" => {
+                        check_unique_login_email_async(&core, old_item, item, action, merge).await
+                    }
+                    _ => PreEditReply::ok_unchanged(),
+                };
+                let _ = reply.send(r);
+            }
+
+            PluginHookMessage::ItemPostEdit { .. } => {
+                // Trait impl was a no-op.
+            }
+
+            PluginHookMessage::ItemAuth { reply, .. } => {
+                // Trait impl always returned `true`.
+                let _ = reply.send(true);
+            }
+
+            PluginHookMessage::ItemListFilter {
+                hndl,
+                user,
+                collection,
+                context,
+                items,
+                reply,
+            } => {
+                let out = if hndl == "security_itm_filter_hook" {
+                    item_list_filter_async(&core, &user, &collection, &context, items).await
+                } else {
+                    ListFilterReply { items }
+                };
+                let _ = reply.send(out);
+            }
+
+            PluginHookMessage::ItemListDbFilter { reply, .. } => {
+                let _ = reply.send(String::new());
+            }
+
+            PluginHookMessage::CollectionRead {
+                hndl,
+                collection,
+                item,
+                reply,
+            } => {
+                let r = if hndl == "security_collection_read_hook" {
+                    collection_read_async(&core, &collection, item).await
+                } else {
+                    CollectionReadReply::default()
+                };
+                let _ = reply.send(r);
+            }
+
+            PluginHookMessage::Otp { hndl, item } => {
+                if hndl == "security_otp_send_email" {
+                    otp_send_email_async(&core, &item).await;
+                }
+            }
+
+            PluginHookMessage::PeriodicJob { .. } => {
+                // Trait impl had no periodic hook.
+            }
+
+            PluginHookMessage::RouteUrl {
+                hndl,
+                user,
+                query,
+                reply,
+            } => {
+                let r = match hndl.as_str() {
+                    "security_get_avatar" => get_avatar_async(&core, &user, &query).await,
+                    _ => WebResponse::NotImplemented,
+                };
+                let _ = reply.send(r);
+            }
+
+            PluginHookMessage::RouteUrlPost {
+                hndl,
+                user,
+                query,
+                item,
+                reply,
+            } => {
+                let r = match hndl.as_str() {
+                    "security_upload_avatar" => {
+                        upload_avatar_async(&core, &user, &query, &item).await
+                    }
+                    _ => WebResponse::NotImplemented,
+                };
+                let _ = reply.send(r);
+            }
+
+            PluginHookMessage::RouteUnprotectedUrl { reply, .. } => {
+                let _ = reply.send(WebResponse::NotImplemented);
+            }
+            PluginHookMessage::RouteUnprotectedUrlPost { reply, .. } => {
+                let _ = reply.send(WebResponse::NotImplemented);
+            }
+            PluginHookMessage::RouteRest { reply, .. } => {
+                let _ = reply.send(WebResponse::NotImplemented);
+            }
+
+            PluginHookMessage::Shutdown => break,
+
+            _ => {
+                // PluginHookMessage is #[non_exhaustive]; ignore future variants.
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// async helpers (one per ported hook). They take &CoreHandle for callbacks,
+// take Items by value, and return reply structs. Logic mirrors the
+// corresponding sync trait method one-to-one.
+// ---------------------------------------------------------------------------
+
+async fn check_unique_login_email_async(
+    core: &CoreHandle,
+    old_itm: Option<Item>,
+    itm: Item,
+    action: DataObjectAction,
+    merge: bool,
+) -> PreEditReply {
+    let mut itm_upd = if old_itm.is_some() {
+        old_itm.unwrap()
+    } else {
+        Item::new()
+    };
+    if merge {
+        itm_upd.merge(&itm);
+    } else {
+        itm_upd = itm.clone();
+    }
+    if action == DataObjectAction::Delete {
+        return PreEditReply::ok_unchanged();
+    }
+    let email = itm_upd.safe_str("email", "").to_lowercase();
+    let login = itm.safe_str("login", "").to_lowercase();
+
+    if email.is_empty() {
+        return PreEditReply::rejected("E-Mail must not be empty");
+    }
+
+    let users = core.db_get_all_items("user", "id", "").await;
+    for usr in &users.map {
+        if *usr.0 != itm.id {
+            if !login.is_empty() && login == usr.1.safe_str("login", "").to_lowercase() {
+                return PreEditReply::rejected("Login mustn't match already existing one");
+            }
+            if email == usr.1.safe_str("email", "").to_lowercase() {
+                return PreEditReply::rejected("E-Mail mustn't match already existing one");
+            }
+        }
+    }
+    PreEditReply::ok_unchanged()
+}
+
+async fn challenge_pre_edit_hook_async(
+    core: &CoreHandle,
+    user: &Option<Item>,
+    collection: &str,
+    old_itm: Option<Item>,
+    mut itm: Item,
+    action: DataObjectAction,
+    _merge: bool,
+) -> PreEditReply {
+    let mut salt: String = "<empty salt>".to_string();
+    let is_admin = core.auth_check_role(user, "admin").await;
+
+    if action == DataObjectAction::Delete {
+        return PreEditReply::ok_unchanged();
+    }
+
+    if collection == "user"
+        && old_itm.is_some()
+        && (itm.strs.contains_key("password") || itm.strs.contains_key("salt"))
+    {
+        error!("Can't edit password directly");
+        return PreEditReply::rejected("Can't edit password directly");
+    }
+
+    if collection == "user" {
+        if old_itm.is_none() {
+            salt = core.auth_get_new_salt().await;
+            itm.set_str("salt", &salt);
+        } else {
+            salt = old_itm.as_ref().unwrap().safe_str("salt", "<empty salt>");
+        }
+    }
+
+    if collection == "user"
+        && old_itm.is_some()
+        && itm.strs.contains_key("__password")
+        && itm.strs.contains_key("__new_password1")
+        && itm.strs.contains_key("__new_password2")
+    {
+        let old_pw_hash = old_itm.as_ref().unwrap().safe_str("password", "");
+        let old_otp = old_itm.as_ref().unwrap().safe_str("otp", "");
+        let old_checked_pw = itm.safe_str("__password", "");
+        if !is_admin && old_checked_pw.is_empty() {
+            error!("Old password is empty");
+            return PreEditReply::rejected("Old password is empty");
+        }
+        let res = is_admin
+            || (!old_pw_hash.is_empty()
+                && core
+                    .auth_verify_password(&old_checked_pw, &old_pw_hash)
+                    .await)
+            || (!old_otp.is_empty() && old_otp == old_checked_pw);
+        if !res
+            || itm.safe_str("__new_password1", "<bad1>")
+                != itm.safe_str("__new_password2", "<bad2>")
+        {
+            error!("Password change challenge failed");
+            return PreEditReply::rejected("Password change challenge failed");
+        }
+        let new_pw = itm.safe_str("__new_password1", "");
+        itm.strs.remove("__password");
+        itm.strs.remove("__new_password1");
+        itm.strs.remove("__new_password2");
+        itm.strs.remove("otp");
+
+        let pw_hash = core.auth_get_password_hash(&new_pw, &salt).await;
+        if itm.strs.contains_key("otp") {
+            itm.strs.remove("otp");
+        }
+        itm.set_str("password", &pw_hash);
+    }
+
+    PreEditReply {
+        result: ProcessResult {
+            succeeded: true,
+            error: String::new(),
+            data: HashMap::new(),
+        },
+        modified_item: Some(itm),
+    }
+}
+
+async fn item_list_filter_async(
+    core: &CoreHandle,
+    user: &Option<Item>,
+    collection: &str,
+    context: &str,
+    map: HashMap<u64, Item>,
+) -> ListFilterReply {
+    if collection != "user" {
+        return ListFilterReply { items: map };
+    }
+
+    let list = context != "full";
+    let mut short_map: HashMap<u64, Item> = HashMap::new();
+    let user_id = match user.as_ref() {
+        Some(u) => u.id,
+        None => {
+            // No user → empty result.
+            return ListFilterReply { items: short_map };
+        }
+    };
+
+    let is_admin = core.auth_check_role(user, "admin").await;
+    info!("Checking collection {} user id {}", collection, user_id);
+
+    if list {
+        for el in &map {
+            if *el.0 == user_id || is_admin || el.1.safe_bool("__security_preserve", false) {
+                let mut itm = Item::new();
+                itm.id = *el.0;
+                itm.strs
+                    .insert("name".to_string(), el.1.safe_str("name", ""));
+                itm.bools.insert(
+                    "role_is_active".to_string(),
+                    el.1.safe_bool("role_is_active", false),
+                );
+                itm.bools.insert(
+                    "role_is_admin".to_string(),
+                    el.1.safe_bool("role_is_admin", false),
+                );
+                short_map.insert(*el.0, itm);
+            } else {
+                let mut itm = Item::new();
+                itm.id = *el.0;
+                itm.strs
+                    .insert("name".to_string(), el.1.safe_str("name", ""));
+                short_map.insert(*el.0, itm);
+            }
+        }
+    } else {
+        for el in &map {
+            if *el.0 != user_id && !is_admin && !el.1.safe_bool("__security_preserve", false) {
+                /* skip */
+            } else {
+                let mut itm = el.1.clone();
+                itm.strs.remove("salt");
+                itm.strs.remove("password");
+                short_map.insert(*el.0, itm);
+            }
+        }
+    }
+    ListFilterReply { items: short_map }
+}
+
+async fn collection_read_async(
+    core: &CoreHandle,
+    collection: &str,
+    mut itm: Item,
+) -> CollectionReadReply {
+    if collection != "user" {
+        return CollectionReadReply::default();
+    }
+    if !itm.strs.contains_key("salt") {
+        let salt = core.auth_get_new_salt().await;
+        itm.set_str("salt", &salt);
+        info!("There is no salt for user {}, created new", itm.id);
+        if itm.strs.contains_key("password") {
+            let pw_old = itm.safe_str("password", "");
+            let hash = core.auth_get_password_hash(&pw_old, &salt).await;
+            itm.set_str("password", &hash);
+            info!("Rehashed password for user {}", itm.id);
+        }
+        return CollectionReadReply {
+            should_save: true,
+            item: Some(itm),
+        };
+    }
+    CollectionReadReply::default()
+}
+
+async fn get_avatar_async(
+    core: &CoreHandle,
+    user: &Option<Item>,
+    query: &str,
+) -> WebResponse {
+    if user.is_none() {
+        return WebResponse::Forbidden;
+    }
+    let data_path = core.globals_get_data_path().await;
+    let q: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap_or_default();
+    let mut target_id: Option<u64> = None;
+    if let Some(id_str) = q.get("id") {
+        if id_str == "me" {
+            target_id = Some(user.as_ref().unwrap().id);
+        } else if let Ok(id) = id_str.parse::<u64>() {
+            target_id = Some(id);
+        }
+    }
+    let uid = match target_id {
+        Some(v) => v,
+        None => return WebResponse::BadRequest,
+    };
+    let path = format!("{}/user-avatars/{}.bin", data_path, uid);
+    WebResponse::OkFilePath("avatar".to_string(), path)
+}
+
+async fn upload_avatar_async(
+    core: &CoreHandle,
+    user: &Option<Item>,
+    query: &str,
+    post_itm: &Item,
+) -> WebResponse {
+    let data_path = core.globals_get_data_path().await;
+    let q: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap_or_default();
+
+    let mut target_id: u64 = u64::MAX;
+    if let Some(id_str) = q.get("id") {
+        if id_str == "me" {
+            if user.is_none() {
+                return WebResponse::Unauthorized;
+            }
+            target_id = user.as_ref().unwrap().id;
+        } else if let Ok(id) = id_str.parse::<u64>() {
+            target_id = id;
+            if user.is_none() {
+                return WebResponse::Unauthorized;
+            }
+            if target_id != user.as_ref().unwrap().id {
+                let is_admin = core.auth_check_role(user, "admin").await;
+                if !is_admin {
+                    return WebResponse::Unauthorized;
+                }
+            }
+        }
+    }
+
+    let files = post_itm.safe_strstr("multipart-files", &HashMap::new());
+
+    let dir_path = format!("{}/user-avatars", data_path);
+    let dir = Path::new(&dir_path);
+    if !dir.exists() {
+        let _ = fs::create_dir_all(dir);
+    }
+
+    let dst = format!("{}/user-avatars/{}.bin", data_path, target_id);
+
+    for file in files {
+        let ext = file.1.split('.').last().unwrap_or("png");
+        let new_path = format!("{}/user-avatars/{}.stage.{}", data_path, target_id, ext);
+        if fs::rename(file.1.clone(), new_path.clone()).is_err() {
+            return WebResponse::BadRequest;
+        }
+
+        match image::open(&new_path) {
+            Ok(img) => {
+                let img = img.resize(256, 256, image::imageops::FilterType::Lanczos3);
+                let img = img.to_rgba8();
+                let mut out: Vec<u8> = Vec::new();
+                let encoder = image::codecs::png::PngEncoder::new(&mut out);
+                if let Err(e) = encoder.write_image(
+                    &img,
+                    img.width(),
+                    img.height(),
+                    image::ColorType::Rgba8.into(),
+                ) {
+                    error!("Failed to encode avatar PNG for {}: {}", file.1, e);
+                    let _ = fs::remove_file(new_path.clone());
+                    return WebResponse::BadRequest;
+                }
+                if let Err(e) = fs::write(dst.clone(), out) {
+                    error!("Failed to write avatar file {}: {}", dst, e);
+                    let _ = fs::remove_file(new_path.clone());
+                    return WebResponse::BadRequest;
+                }
+                let _ = fs::remove_file(new_path.clone());
+                return WebResponse::Ok;
+            }
+            Err(e) => {
+                error!("Failed to open uploaded image {}: {}", file.1, e);
+                let _ = fs::remove_file(new_path.clone());
+                return WebResponse::BadRequest;
+            }
+        }
+    }
+    WebResponse::BadRequest
+}
+
+async fn otp_send_email_async(core: &CoreHandle, itm: &Item) {
+    let email = itm.safe_str("email", "");
+    let otp = itm.safe_str("otp", "");
+    if email.is_empty() || otp.is_empty() {
+        return;
+    }
+    core.send_email(
+        &email,
+        "Your login code",
+        &format!("Enter this as password: {}", otp),
+    )
+    .await;
+}
