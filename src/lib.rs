@@ -32,7 +32,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-
 // Security plugin — actor entry point. Spawned by `register_actor`, the
 // task drains `PluginHookMessage`s from its mpsc and dispatches to async
 // handlers that talk to core via `CoreHandle`. All non-trivial trait-mode
@@ -410,11 +409,7 @@ async fn collection_read_async(
     CollectionReadReply::default()
 }
 
-async fn get_avatar_async(
-    core: &CoreHandle,
-    user: &Option<Item>,
-    query: &str,
-) -> WebResponse {
+async fn get_avatar_async(core: &CoreHandle, user: &Option<Item>, query: &str) -> WebResponse {
     if user.is_none() {
         return WebResponse::Forbidden;
     }
