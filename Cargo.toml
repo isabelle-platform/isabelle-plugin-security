@@ -1,6 +1,6 @@
 [package]
 name = "isabelle-plugin-security"
-version = "1.19.0"
+version = "1.20.0"
 edition = "2021"
 
 # Static-only — the plugin is rlib'd into the core binary at build time.
@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm", tag = "1.10.0" }
-isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.23.0" }
+isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.24.0" }
 log = "0.4.0"
 serde_urlencoded = "0.7.1"
 image = "0.25.10"
@@ -19,9 +19,3 @@ image = "0.25.10"
 # actix's current-thread runtime and create mpsc channels.
 actix-rt = "2.10.0"
 tokio = { version = "1.37", features = ["sync"] }
-
-# Use the local checkout of isabelle-plugin-api so the actor-model types
-# (CoreHandle, PluginHookMessage, PluginRegistry) resolve until a new tag
-# is published. Matches the same patch in isabelle-core/Cargo.toml.
-[patch."https://github.com/isabelle-platform/isabelle-plugin-api"]
-isabelle-plugin-api = { path = "../isabelle-plugin-api" }
