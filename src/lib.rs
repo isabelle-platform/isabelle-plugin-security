@@ -33,24 +33,12 @@ use std::fs;
 use std::path::Path;
 
 
-// ---------------------------------------------------------------------------
-// Actor-mode (Phase 3) — register_actor + actor loop
-// ---------------------------------------------------------------------------
-//
-// This is the new entry point: instead of returning a `Box<dyn Plugin>` that
-// gets called synchronously, we spawn a tokio task that consumes
-// `PluginHookMessage`s from an mpsc and replies via embedded oneshots.
-//
-// Status:
-//   * ping, item_post_edit_hook, item_auth_hook, route_unprotected_*: fully
-//     ported (they were no-ops / trivial in the trait impl).
-//   * check_unique_login_email, challenge_pre_edit_hook, item_list_filter_hook,
-//     route_url_hook (get_avatar), route_url_post_hook (upload_avatar),
-//     collection_read_hook, call_otp_hook: marked TODO. The actor task replies
-//     with passthrough defaults — these hooks are non-functional in actor mode
-//     until ported, which is why core's default build keeps security on the
-//     trait path. Switch via cargo feature only when you're ready to lose
-//     these checks.
+// Security plugin — actor entry point. Spawned by `register_actor`, the
+// task drains `PluginHookMessage`s from its mpsc and dispatches to async
+// handlers that talk to core via `CoreHandle`. All non-trivial trait-mode
+// hooks (password challenge, unique-login/email check, avatar get/upload,
+// item-list filter, collection-read, OTP send) are ported to native
+// async; unsupported routes return `WebResponse::NotImplemented`.
 
 use isabelle_plugin_api::actor::{
     CollectionReadReply, CoreHandle, ListFilterReply, PluginHookMessage, PluginRegistry,
