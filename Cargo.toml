@@ -19,3 +19,7 @@ image = "0.25.10"
 # actix's current-thread runtime and create mpsc channels.
 actix-rt = "2.10.0"
 tokio = { version = "1.37", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1.37", features = ["sync", "macros", "rt"] }
+tempfile = "3"
