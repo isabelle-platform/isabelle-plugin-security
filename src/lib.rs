@@ -294,7 +294,7 @@ async fn challenge_pre_edit_hook_async(
                 }
             }
             Some(old) => {
-                salt = old.safe_str("salt", "<empty salt>");
+                salt = old.safe_str("salt", "");
             }
         }
     }
@@ -333,7 +333,21 @@ async fn challenge_pre_edit_hook_async(
         // dispatcher's merge into the stored item, unlike a removed key.
         itm.set_str("otp", "");
 
+        // An account that has never had a password may have no salt either:
+        // self-registration creates none, and the core only adds a missing
+        // one when it checks the user collection at start-up. Hashing with a
+        // placeholder failed inside the core and stored an empty password —
+        // the screen said "Changed" and the account could no longer sign in
+        // with a password at all. Give it a salt the way creation does.
+        if salt.is_empty() {
+            salt = core.auth_get_new_salt().await;
+            itm.set_str("salt", &salt);
+        }
         let pw_hash = core.auth_get_password_hash(&new_pw, &salt).await;
+        if pw_hash.is_empty() {
+            error!("Password hashing produced nothing; refusing to store it");
+            return PreEditReply::rejected("The password could not be changed. Try again.");
+        }
         itm.set_str("password", &pw_hash);
     }
 
@@ -847,6 +861,31 @@ mod tests {
         assert!(!out.strs.contains_key("__password"));
         assert!(!out.strs.contains_key("__new_password1"));
         assert!(!out.strs.contains_key("__new_password2"));
+    }
+
+    /// An account that signed itself up has no password and no salt; its
+    /// first password is set with a mailed code. It must come out hashed with
+    /// a salt of its own, not stored empty.
+    #[tokio::test]
+    async fn a_first_password_set_with_a_code_gets_a_salt() {
+        let (core, _) = mock_core(HashMap::new(), "");
+        let mut stored = user(1, "carol", "carol@example.com");
+        stored.set_str("otp", "123456789");
+        let r = challenge_pre_edit_hook_async(
+            &core,
+            &Some(user(1, "carol", "carol@example.com")),
+            "user",
+            Some(stored),
+            pw_change_delta("123456789", "newpw", "newpw"),
+            DataObjectAction::Modify,
+            false,
+        )
+        .await;
+        assert!(r.result.succeeded, "{}", r.result.error);
+        let out = r.modified_item.expect("modified item");
+        assert_eq!(out.safe_str("salt", ""), "NEWSALT");
+        assert_eq!(out.safe_str("password", ""), "H(newpw|NEWSALT)");
+        assert_eq!(out.safe_str("otp", "unset"), "", "the code is spent");
     }
 
     #[tokio::test]
