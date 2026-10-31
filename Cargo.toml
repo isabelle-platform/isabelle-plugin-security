@@ -1,6 +1,6 @@
 [package]
 name = "isabelle-plugin-security"
-version = "1.24.2"
+version = "1.24.3"
 edition = "2021"
 
 # Static-only — the plugin is rlib'd into the core binary at build time.
@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 isabelle-dm = { "git" = "https://github.com/isabelle-platform/isabelle-dm", tag = "1.10.0" }
-isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.28.0" }
+isabelle-plugin-api = { "git" = "https://github.com/isabelle-platform/isabelle-plugin-api", tag = "1.29.0" }
 log = "0.4.0"
 serde_urlencoded = "0.7.1"
 image = "0.25.10"
