@@ -400,6 +400,14 @@ async fn item_list_filter_async(
                     "role_is_admin".to_string(),
                     el.1.safe_bool("role_is_admin", false),
                 );
+                // An administrator's list of accounts is how they tell one
+                // from another and reach its owner: the login and the e-mail
+                // belong in it. Nobody else's short view carries them.
+                if is_admin {
+                    for f in ["login", "email"] {
+                        itm.strs.insert(f.to_string(), el.1.safe_str(f, ""));
+                    }
+                }
                 short_map.insert(*el.0, itm);
             } else {
                 let mut itm = Item::new();
@@ -1145,6 +1153,41 @@ mod tests {
         assert!(!r.items[&2].bools.contains_key("role_is_admin"));
         // Own row keeps role flags.
         assert!(r.items[&1].bools.contains_key("role_is_admin"));
+    }
+
+    #[tokio::test]
+    async fn filter_list_context_gives_admin_login_and_email() {
+        let (core, _) = mock_core(HashMap::new(), "");
+        let mut map = HashMap::new();
+        map.insert(1, stored_user_with_secrets(1));
+        map.insert(2, stored_user_with_secrets(2));
+        let r = item_list_filter_async(
+            &core,
+            &Some(admin(9, "root", "root@e.com")),
+            "user",
+            "list",
+            map.clone(),
+        )
+        .await;
+        assert_eq!(r.items.len(), 2);
+        for (id, itm) in &r.items {
+            assert_eq!(itm.safe_str("login", "?"), map[id].safe_str("login", ""));
+            assert_eq!(itm.safe_str("email", "?"), map[id].safe_str("email", ""));
+            assert!(!itm.strs.contains_key("password"));
+            assert!(!itm.strs.contains_key("salt"));
+            assert!(!itm.strs.contains_key("otp"));
+        }
+        // A customer's short view of their own row still has neither.
+        let r = item_list_filter_async(
+            &core,
+            &Some(user(1, "alice", "a@e.com")),
+            "user",
+            "list",
+            map,
+        )
+        .await;
+        assert!(!r.items[&1].strs.contains_key("login"));
+        assert!(!r.items[&1].strs.contains_key("email"));
     }
 
     // -----------------------------------------------------------------------
