@@ -1,6 +1,6 @@
 [package]
 name = "isabelle-plugin-security"
-version = "1.24.3"
+version = "1.24.4"
 edition = "2021"
 
 # Static-only — the plugin is rlib'd into the core binary at build time.
