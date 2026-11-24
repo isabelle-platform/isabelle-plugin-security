@@ -477,8 +477,22 @@ async fn get_avatar_async(core: &CoreHandle, user: &Option<Item>, query: &str) -
         Some(v) => v,
         None => return WebResponse::BadRequest,
     };
-    let path = format!("{}/user-avatars/{}.bin", data_path, uid);
-    WebResponse::OkFilePath("avatar".to_string(), path)
+    // Served as a PNG under a `.png` name: the file's extension is what sets
+    // its content type, and an image sent as `application/octet-stream` with
+    // `nosniff` is not shown by a browser loading it from the API's origin.
+    // An avatar stored before is a PNG under the old `.bin` name; it is moved
+    // on its first read.
+    let path = avatar_path(&data_path, uid);
+    let legacy = format!("{}/user-avatars/{}.bin", data_path, uid);
+    if !Path::new(&path).exists() && Path::new(&legacy).exists() {
+        let _ = fs::rename(&legacy, &path);
+    }
+    WebResponse::OkFilePath("avatar.png".to_string(), path)
+}
+
+/// Where a user's avatar is kept: always a PNG (uploads are re-encoded).
+fn avatar_path(data_path: &str, uid: u64) -> String {
+    format!("{}/user-avatars/{}.png", data_path, uid)
 }
 
 async fn upload_avatar_async(
@@ -514,7 +528,7 @@ async fn upload_avatar_async(
         let _ = fs::create_dir_all(dir);
     }
 
-    let dst = format!("{}/user-avatars/{}.bin", data_path, target_id);
+    let dst = avatar_path(&data_path, target_id);
 
     if let Some(file) = files.into_iter().next() {
         // Fixed staging name: the client-supplied file name must never
@@ -566,6 +580,8 @@ async fn upload_avatar_async(
                     return WebResponse::BadRequest;
                 }
                 let _ = fs::remove_file(new_path.clone());
+                // The old name would otherwise come back on a later read.
+                let _ = fs::remove_file(format!("{}/user-avatars/{}.bin", data_path, target_id));
                 return WebResponse::Ok;
             }
             Err(e) => {
@@ -1243,6 +1259,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_avatar_kept_under_the_old_name_is_served_as_a_png() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().to_string_lossy().into_owned();
+        std::fs::create_dir_all(dir.path().join("user-avatars")).unwrap();
+        std::fs::write(dir.path().join("user-avatars/3.bin"), b"png bytes").unwrap();
+        let (core, _) = mock_core(HashMap::new(), &data);
+        let u = Some(user(1, "alice", "a@e.com"));
+        match get_avatar_async(&core, &u, "id=3").await {
+            WebResponse::OkFilePath(name, path) => {
+                assert_eq!(name, "avatar.png");
+                assert!(path.ends_with("user-avatars/3.png"), "{path}");
+            }
+            _ => panic!("expected the avatar file"),
+        }
+        assert!(dir.path().join("user-avatars/3.png").exists());
+        assert!(!dir.path().join("user-avatars/3.bin").exists());
+    }
+
+    #[tokio::test]
     async fn get_avatar_requires_auth_and_valid_id() {
         let (core, _) = mock_core(HashMap::new(), "/data");
         assert!(matches!(
@@ -1260,7 +1295,7 @@ mod tests {
         ));
         match get_avatar_async(&core, &u, "id=me").await {
             WebResponse::OkFilePath(_, path) => {
-                assert_eq!(path, "/data/user-avatars/1.bin");
+                assert_eq!(path, "/data/user-avatars/1.png");
             }
             _ => panic!("expected OkFilePath"),
         }
@@ -1315,7 +1350,7 @@ mod tests {
         let u = Some(user(1, "alice", "a@e.com"));
         let r = upload_avatar_async(&core, &u, "id=me", &upload_item(src.to_str().unwrap())).await;
         assert!(matches!(r, WebResponse::Ok));
-        let dst = dir.path().join("user-avatars/1.bin");
+        let dst = dir.path().join("user-avatars/1.png");
         assert!(dst.exists());
         // Staging file must be cleaned up.
         assert!(!dir.path().join("user-avatars/1.stage").exists());
@@ -1338,7 +1373,7 @@ mod tests {
         let u = Some(admin(9, "root", "root@e.com"));
         let r = upload_avatar_async(&core, &u, "id=2", &upload_item(src.to_str().unwrap())).await;
         assert!(matches!(r, WebResponse::Ok));
-        assert!(dir.path().join("user-avatars/2.bin").exists());
+        assert!(dir.path().join("user-avatars/2.png").exists());
     }
 
     #[tokio::test]
@@ -1353,7 +1388,7 @@ mod tests {
         let u = Some(user(1, "alice", "a@e.com"));
         let r = upload_avatar_async(&core, &u, "id=me", &upload_item(src.to_str().unwrap())).await;
         assert!(matches!(r, WebResponse::Ok));
-        assert!(dir.path().join("user-avatars/1.bin").exists());
+        assert!(dir.path().join("user-avatars/1.png").exists());
         // Nothing escaped the avatars directory.
         assert!(!dir.path().join("upload").exists());
     }
@@ -1367,7 +1402,7 @@ mod tests {
         let u = Some(user(1, "alice", "a@e.com"));
         let r = upload_avatar_async(&core, &u, "id=me", &upload_item(src.to_str().unwrap())).await;
         assert!(matches!(r, WebResponse::BadRequest));
-        assert!(!dir.path().join("user-avatars/1.bin").exists());
+        assert!(!dir.path().join("user-avatars/1.png").exists());
         assert!(!dir.path().join("user-avatars/1.stage").exists());
     }
 
